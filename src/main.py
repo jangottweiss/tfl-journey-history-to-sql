@@ -8,6 +8,7 @@ from fuzzywuzzy import process
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from sqlalchemy import create_engine
 import sqlite3
 from sqlite3 import Error
 
@@ -22,8 +23,8 @@ class TFLParser():
         self.meta_file_path = os.environ.get('FILE_META_PATH', '/data/meta')
         self.generate_csv = os.environ.get(
             'GENERATE_CSV', 'true').lower() in boolStrings
-        self.generate_sqllite = os.environ.get(
-            'GENERATE_SQLLITE', 'true').lower() in boolStrings
+        self.generate_sqlite = os.environ.get(
+            'GENERATE_SQLITE', 'true').lower() in boolStrings
 
         self.generate_postgres = os.environ.get(
             'GENERATE_POSTGRES', 'false').lower() in boolStrings
@@ -37,7 +38,7 @@ class TFLParser():
         busData.to_csv(
             f'{self.output_file_path}/{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}-bus-journeys.csv', index=False)
 
-    def _toSQLLITE(self, trainData, busData):
+    def _toSQLITE(self, trainData, busData):
         # Create a database connection
         conn = None
         try:
@@ -58,9 +59,12 @@ class TFLParser():
 
         if conn:
             conn.close()
-    
+
     def _toPOSTGRES(self, trainData, busData):
         print('to postgres')
+        engine = create_engine(self.postgres_uri)
+        trainData.to_sql('train_journeys', engine, if_exists='replace')
+        busData.to_sql('bus_journeys', engine, if_exists='replace')
 
     def _get_coordinates_from_station(self, station, station_mapping):
         if pd.notnull(station):
@@ -113,14 +117,19 @@ class TFLParser():
         # Drop and Rename Fields
         all_data = all_data.drop(
             ['Date', 'Time', 'Notes', 'Capped', 'startTimeStr', 'endTimeStr'], axis=1)
-        all_data = all_data.rename(columns={'Journey': 'journey'})
+        all_data = all_data.rename(
+            columns={'Journey': 'journey', 'Charge (GBP)': 'charge'})
 
         # Split Train and Bus Journeys
         train_journeys = all_data[all_data['isTrainJourney']]
         train_journeys = train_journeys[(train_journeys['fromStation'] != 'Unknown') & (
             train_journeys['toStation'] != 'Unknown')]
+        train_journeys = train_journeys.drop(
+            ['isTrainJourney', 'isBusJourney', 'busRoute'], axis=1)
 
         bus_journeys = all_data[all_data['isBusJourney']]
+        bus_journeys = bus_journeys.drop(
+            ['isTrainJourney', 'isBusJourney', 'fromStation', 'toStation'], axis=1)
 
         # Station Geodata Match
         station_geo_data = gpd.read_file(
@@ -144,9 +153,9 @@ class TFLParser():
             print('export csv files')
             self._toCSV(train_journeys, bus_journeys)
 
-        if self.generate_sqllite:
-            print('generate sqllite')
-            self._toSQLLITE(train_journeys, bus_journeys)
+        if self.generate_sqlite:
+            print('generate sqlite')
+            self._toSQLITE(train_journeys, bus_journeys)
 
         if self.generate_postgres and self.postgres_uri:
             print('Postgres')

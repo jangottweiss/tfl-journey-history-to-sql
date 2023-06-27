@@ -4,3 +4,4 @@ geopandas
 pygeohash
 fuzzywuzzy
 python-Levenshtein
+sqlalchemy
