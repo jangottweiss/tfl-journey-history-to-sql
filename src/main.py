@@ -8,6 +8,8 @@ from fuzzywuzzy import process
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+import sqlite3
+from sqlite3 import Error
 
 boolStrings = ['true', '1', 'yes']
 
@@ -23,11 +25,42 @@ class TFLParser():
         self.generate_sqllite = os.environ.get(
             'GENERATE_SQLLITE', 'true').lower() in boolStrings
 
+        self.generate_postgres = os.environ.get(
+            'GENERATE_POSTGRES', 'false').lower() in boolStrings
+        if self.generate_postgres:
+            self.postgres_uri = os.environ.get(
+                'POSTGRES_URI', 'postgresql://localhost')
+
     def _toCSV(self, trainData, busData):
         trainData.to_csv(
             f'{self.output_file_path}/{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}-train-journeys.csv', index=False)
         busData.to_csv(
             f'{self.output_file_path}/{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}-bus-journeys.csv', index=False)
+
+    def _toSQLLITE(self, trainData, busData):
+        # Create a database connection
+        conn = None
+        try:
+            # You can also supply the special name ":memory:" to create a database in RAM
+            conn = sqlite3.connect(
+                f'{self.output_file_path}/{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}-database.db')
+        except Error as e:
+            print(e)
+
+        # Export DataFrame to SQLite database
+        if conn is not None:
+            trainData.to_sql('train_journeys', conn,
+                             if_exists='replace', index=False)
+            busData.to_sql('bus_journeys', conn,
+                           if_exists='replace', index=False)
+        else:
+            print("Error! cannot create the database connection.")
+
+        if conn:
+            conn.close()
+    
+    def _toPOSTGRES(self, trainData, busData):
+        print('to postgres')
 
     def _get_coordinates_from_station(self, station, station_mapping):
         if pd.notnull(station):
@@ -78,9 +111,9 @@ class TFLParser():
             all_data['Date'] + ' ' + all_data['endTimeStr'], format='%d/%m/%Y %H:%M', errors='coerce')
 
         # Drop and Rename Fields
-        # all_data = all_data.drop(
-        #     ['Date', 'Time', 'Notes', 'Capped', 'startTimeStr', 'endTimeStr'], axis=1)
-        # all_data = all_data.rename(columns={'Journey': 'journey'})
+        all_data = all_data.drop(
+            ['Date', 'Time', 'Notes', 'Capped', 'startTimeStr', 'endTimeStr'], axis=1)
+        all_data = all_data.rename(columns={'Journey': 'journey'})
 
         # Split Train and Bus Journeys
         train_journeys = all_data[all_data['isTrainJourney']]
@@ -96,17 +129,11 @@ class TFLParser():
             row['geometry'].x, row['geometry'].y] for _, row in station_geo_data.iterrows()}
 
         # Coordinates and Geohash
-        # train_journeys[['toLng', 'toLat']] = train_journeys['fromStation'].apply(
-        #     self._get_coordinates_from_station, args=(station_mappings, )).apply(pd.Series)
-
         train_journeys[['fromLng', 'fromLat', 'fromStationMatched']] = train_journeys['fromStation'].apply(
             self._get_coordinates_from_station, args=(station_mappings,)).apply(pd.Series)
 
         train_journeys[['toLng', 'toLat', 'toStationMatched']] = train_journeys['toStation'].apply(
             self._get_coordinates_from_station, args=(station_mappings,)).apply(pd.Series)
-
-        # train_journeys[['fromLng', 'fromLat']] = train_journeys['toStation'].apply(
-        #     self._get_coordinates_from_station, args=(station_mappings, )).apply(pd.Series)
 
         train_journeys['fromGeohash'] = train_journeys.apply(
             self._calculate_geohash, args=('fromLat', 'fromLng'), axis=1)
@@ -116,6 +143,13 @@ class TFLParser():
         if self.generate_csv:
             print('export csv files')
             self._toCSV(train_journeys, bus_journeys)
+
+        if self.generate_sqllite:
+            print('generate sqllite')
+            self._toSQLLITE(train_journeys, bus_journeys)
+
+        if self.generate_postgres and self.postgres_uri:
+            print('Postgres')
 
 
 class FileHandler(FileSystemEventHandler):
