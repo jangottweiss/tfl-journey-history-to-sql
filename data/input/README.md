@@ -1,0 +1,3 @@
+- Export all Journey History files from [TFL](https://contactless.tfl.gov.uk/MyCards)
+- Make sure to export them as `.csv` files
+- Place all of those files in thi folder `/data/input`

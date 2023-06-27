@@ -34,10 +34,11 @@ class TFLParser():
             best_match = process.extractOne(station, station_mapping.keys())
             if best_match[1] < 70:
                 print(station, best_match)
-                return None
-            return station_mapping[best_match[0]]
+                return pd.Series([None, None, None])
+            # return station_mapping[best_match[0]]
+            return pd.Series([station_mapping[best_match[0]][0], station_mapping[best_match[0]][1], best_match[0]])
         else:
-            return None
+            return pd.Series([None, None, None])
 
     def _calculate_geohash(self, row, lat, lng):
         return gh.encode(row[lat], row[lng], precision=12)
@@ -95,11 +96,17 @@ class TFLParser():
             row['geometry'].x, row['geometry'].y] for _, row in station_geo_data.iterrows()}
 
         # Coordinates and Geohash
-        train_journeys[['toLng', 'toLat']] = train_journeys['fromStation'].apply(
-            self._get_coordinates_from_station, args=(station_mappings, )).apply(pd.Series)
+        # train_journeys[['toLng', 'toLat']] = train_journeys['fromStation'].apply(
+        #     self._get_coordinates_from_station, args=(station_mappings, )).apply(pd.Series)
 
-        train_journeys[['fromLng', 'fromLat']] = train_journeys['toStation'].apply(
-            self._get_coordinates_from_station, args=(station_mappings, )).apply(pd.Series)
+        train_journeys[['fromLng', 'fromLat', 'fromStationMatched']] = train_journeys['fromStation'].apply(
+            self._get_coordinates_from_station, args=(station_mappings,)).apply(pd.Series)
+
+        train_journeys[['toLng', 'toLat', 'toStationMatched']] = train_journeys['toStation'].apply(
+            self._get_coordinates_from_station, args=(station_mappings,)).apply(pd.Series)
+
+        # train_journeys[['fromLng', 'fromLat']] = train_journeys['toStation'].apply(
+        #     self._get_coordinates_from_station, args=(station_mappings, )).apply(pd.Series)
 
         train_journeys['fromGeohash'] = train_journeys.apply(
             self._calculate_geohash, args=('fromLat', 'fromLng'), axis=1)
