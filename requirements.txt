@@ -5,3 +5,4 @@ pygeohash
 fuzzywuzzy
 python-Levenshtein
 sqlalchemy
+psycopg2

@@ -159,6 +159,7 @@ class TFLParser():
 
         if self.generate_postgres and self.postgres_uri:
             print('Postgres')
+            self._toPOSTGRES(train_journeys, bus_journeys)
 
 
 class FileHandler(FileSystemEventHandler):
